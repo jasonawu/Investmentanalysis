@@ -246,3 +246,68 @@ def sensitivity(fwd_eps: float, price: float, growths: list[float], pes: list[fl
     """Return grid (rows = EPS growth, columns = exit P/E) of implied upside vs price."""
     data = [[fwd_eps * (1 + g) * pe / price - 1 for pe in pes] for g in growths]
     return pd.DataFrame(data, index=growths, columns=pes)
+
+
+# --------------------------------------------------------------------------- #
+# One-line summary (used by the watchlist and the dashboard headline)
+# --------------------------------------------------------------------------- #
+FAIR_BAND = 0.10  # within +/-10% of fair value reads as "fairly priced"
+
+
+def verdict(upside: float | None, band: float = FAIR_BAND) -> str:
+    if upside is None or not np.isfinite(upside):
+        return "n/a"
+    if upside > band:
+        return "Undervalued"
+    if upside < -band:
+        return "Overvalued"
+    return "Fair"
+
+
+def summarize(c: CompanyData, peers: list[CompanyData], basis: str = "ntm",
+              methods: set[str] | None = None, fair_pe_override: float | None = None) -> dict:
+    """Everything needed to rank a stock: current vs fair forward P/E and implied upside.
+
+    methods: names of FairMultiple methods to blend (None = all available).
+    fair_pe_override: the user's own fair P/E, which replaces the blend when given.
+    """
+    hist = forward_pe_history(c, basis=basis)
+    table = peer_table(c, peers, basis)
+    ms = fair_multiples(table, hist, c.ticker)
+    used = [m for m in ms if methods is None or _method_key(m.method) in methods]
+    model_pe = blend(used)
+    fair_pe = fair_pe_override if fair_pe_override else model_pe
+    fwd_eps = current_forward_eps(c, basis)
+    cur_pe = c.price / fwd_eps if (c.price and fwd_eps and fwd_eps > 0) else None
+    fair_value = fair_pe * fwd_eps if (fair_pe and fwd_eps and fwd_eps > 0) else None
+    upside = fair_value / c.price - 1 if (fair_value and c.price) else None
+    own = next((m.pe for m in ms if m.method.startswith("Own")), None)
+    peer_med = next((m.pe for m in ms if m.method == "Peer median P/E"), None)
+    return {
+        "ticker": c.ticker, "name": c.name, "industry": c.industry, "currency": c.currency,
+        "price": c.price, "market_cap": c.market_cap, "fwd_eps": fwd_eps,
+        "fwd_pe": cur_pe, "model_pe": model_pe, "fair_pe": fair_pe,
+        "fair_value": fair_value, "upside": upside, "verdict": verdict(upside),
+        "eps_growth": forward_eps_growth(c), "rev_growth": forward_revenue_growth(c),
+        "peer_median_pe": peer_med, "own_avg_pe": own,
+        "vs_own_avg": (cur_pe / own - 1) if (cur_pe and own) else None,
+        "vs_peers": (cur_pe / peer_med - 1) if (cur_pe and peer_med) else None,
+        "custom_pe": bool(fair_pe_override), "n_peers": len(peers),
+        "multiples": ms,
+    }
+
+
+def _method_key(method: str) -> str:
+    """Stable key for a method name ('Own 5y average' -> 'own')."""
+    m = method.lower()
+    if m.startswith("own"):
+        return "own"
+    if "peg" in m:
+        return "peg"
+    if "regression" in m:
+        return "regression"
+    return "median"
+
+
+METHOD_KEYS = {"median": "Peer median P/E", "peg": "Peer PEG x growth",
+               "regression": "P/E vs growth regression", "own": "Own 5y average"}

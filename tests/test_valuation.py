@@ -46,3 +46,16 @@ def test_fair_multiples_on_demo_universe():
     ms = V.fair_multiples(table, V.forward_pe_history(c), c.ticker)
     assert all(m.pe is None or 0 < m.pe < 200 for m in ms)
     assert V.blend(ms) is not None
+
+
+def test_summarize_and_override():
+    c = load_company("DEMO")
+    peers = [load_company(p, with_peers=False) for p in c.peers]
+    s = V.summarize(c, peers)
+    assert s["fair_value"] == pytest.approx(s["fair_pe"] * s["fwd_eps"])
+    assert s["upside"] == pytest.approx(s["fair_value"] / s["price"] - 1)
+    only_peers = V.summarize(c, peers, methods={"median"})
+    assert only_peers["fair_pe"] == pytest.approx(only_peers["peer_median_pe"])
+    mine = V.summarize(c, peers, fair_pe_override=40.0)
+    assert mine["fair_pe"] == 40.0 and mine["custom_pe"]
+    assert V.verdict(0.2) == "Undervalued" and V.verdict(-0.2) == "Overvalued" and V.verdict(0.05) == "Fair"
