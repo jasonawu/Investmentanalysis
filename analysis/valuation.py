@@ -64,6 +64,13 @@ def fiscal_table(c: CompanyData, field: str) -> pd.Series:
     """Values by fiscal-year end: reported actuals plus the current (FY0) and next (FY1) estimates."""
     act = c.annual[field].dropna().astype(float).sort_index() if field in c.annual else pd.Series(dtype=float)
     e = c.estimates
+    ea = e.annual
+    if isinstance(ea, pd.DataFrame) and len(ea) and field in ea and ea[field].notna().any():
+        # Multi-year consensus available (FMP): use every future year, including real EBITDA consensus.
+        last = act.index.max() if len(act) else None
+        fut = ea[field].dropna()
+        fut = fut[fut.index > last] if last is not None else fut
+        return pd.concat([act, fut.astype(float)]).sort_index()
     if field == "eps":
         f0, f1 = e.eps_fy0, e.eps_fy1
     elif field == "revenue":
@@ -97,6 +104,8 @@ def ntm_value_at(date: pd.Timestamp, fy: pd.Series) -> float | None:
     if len(later) < 2:
         return None
     e_k, e_k1 = later[0], later[1]
+    if (e_k - date).days > YEAR_DAYS + 7:
+        return None  # before the earliest fiscal year we have data for
     f = float(np.clip((e_k - date).days / YEAR_DAYS, 0.0, 1.0))
     return f * fy[e_k] + (1 - f) * fy[e_k1]
 
@@ -105,9 +114,10 @@ def forward_value(c: CompanyData, field: str, basis: str = "ntm",
                   today: pd.Timestamp | None = None) -> float | None:
     fy = fiscal_table(c, field)
     if basis == "fy1":
-        e = c.estimates
-        nxt = (e.fy0_end + pd.DateOffset(years=1)) if e.fy0_end is not None else None
-        return float(fy[nxt]) if nxt is not None and nxt in fy.index else None
+        # The second fiscal year after the last reported one (dates can shift a few days in 52/53-week years).
+        act = c.annual[field].dropna() if field in c.annual else pd.Series(dtype=float)
+        future = fy[fy.index > act.index.max()] if len(act) else fy
+        return float(future.iloc[1]) if len(future) > 1 else None
     return ntm_value_at(today or pd.Timestamp.today().normalize(), fy)
 
 
@@ -478,10 +488,11 @@ def quarterly_view(c: CompanyData) -> pd.DataFrame:
       eps_consensus    consensus EPS for the quarter (recent reported quarters and unreported ones)
       eps_surprise     actual / consensus - 1 (beat > 0, miss < 0), where both are known
     """
-    cols = ["revenue", "eps", "estimated", "eps_consensus", "eps_surprise"]
+    cols = ["revenue", "eps", "estimated", "eps_consensus", "eps_surprise", "revenue_consensus", "revenue_surprise"]
     q = c.quarterly.sort_index()
     out = pd.DataFrame({"revenue": q["revenue"], "eps": q["eps"], "estimated": False,
-                        "eps_consensus": np.nan, "eps_surprise": np.nan}, index=q.index)[cols] \
+                        "eps_consensus": np.nan, "eps_surprise": np.nan,
+                        "revenue_consensus": np.nan, "revenue_surprise": np.nan}, index=q.index)[cols] \
         if len(q) else pd.DataFrame(columns=cols)
     s = c.estimates.eps_surprises
     if len(s) and len(q):
@@ -494,16 +505,21 @@ def quarterly_view(c: CompanyData) -> pd.DataFrame:
                 out.loc[qd, "eps_consensus"] = r.get("eps_estimate")
                 if pd.notna(r.get("eps_actual")):
                     out.loc[qd, "eps"] = r.get("eps_actual")  # same basis as the consensus
+                if pd.notna(r.get("revenue_estimate", np.nan)):
+                    out.loc[qd, "revenue_consensus"] = r.get("revenue_estimate")
     for e in c.estimates.quarters:
         if e["end"] in out.index:
             continue
         out.loc[e["end"]] = {"revenue": e.get("revenue"), "eps": e.get("eps"), "estimated": True,
-                             "eps_consensus": e.get("eps"), "eps_surprise": np.nan}
+                             "eps_consensus": e.get("eps"), "eps_surprise": np.nan,
+                             "revenue_consensus": e.get("revenue"), "revenue_surprise": np.nan}
     out = out.sort_index()
-    for col in ["revenue", "eps", "eps_consensus", "eps_surprise"]:
+    for col in ["revenue", "eps", "eps_consensus", "eps_surprise", "revenue_consensus", "revenue_surprise"]:
         out[col] = pd.to_numeric(out[col], errors="coerce")
     out["estimated"] = out["estimated"].fillna(False).astype(bool)
     rep = ~out["estimated"] & out["eps_consensus"].notna() & out["eps_consensus"].ne(0)
     out.loc[rep, "eps_surprise"] = (out.loc[rep, "eps"] - out.loc[rep, "eps_consensus"]) \
         / out.loc[rep, "eps_consensus"].abs()
+    rr = ~out["estimated"] & out["revenue_consensus"].gt(0)
+    out.loc[rr, "revenue_surprise"] = out.loc[rr, "revenue"] / out.loc[rr, "revenue_consensus"] - 1
     return out

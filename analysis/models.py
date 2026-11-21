@@ -24,8 +24,11 @@ class Estimates:
     eps_fy1_trend: dict[str, float] = field(default_factory=dict)
     # Next unreported quarters: [{"end": Timestamp, "revenue": float|None, "eps": float|None}, ...]
     quarters: list[dict] = field(default_factory=list)
-    # Recent reported quarters, consensus EPS vs actual: index = quarter end, columns eps_estimate, eps_actual.
+    # Recent reported quarters, consensus vs actual: index = quarter end, columns eps_estimate, eps_actual
+    # and (when the source has them) revenue_estimate, revenue_actual.
     eps_surprises: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=["eps_estimate", "eps_actual"]))
+    # Multi-year annual consensus (FMP): index = fiscal year end, columns eps, revenue, ebitda, ebit.
+    annual: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 @dataclass
@@ -49,3 +52,5 @@ class CompanyData:
     estimates: Estimates = field(default_factory=Estimates)
     peers: list[str] = field(default_factory=list)
     is_demo: bool = False
+    # Where each kind of data came from, e.g. {"financials": "FMP", "prices": "Yahoo"}.
+    sources: dict[str, str] = field(default_factory=dict)

@@ -104,17 +104,44 @@ def as_text(df, fmts: dict[str, str], na: str = "—"):
 # --------------------------------------------------------------------------- #
 # Watchlist storage (file locally; GitHub gist when a token is configured)
 # --------------------------------------------------------------------------- #
-def _bootstrap_secrets() -> None:
-    """Copy the watchlist token from Streamlit secrets (website version) into the environment."""
+SECRET_NAMES = ("WATCHLIST_GITHUB_TOKEN", "FMP_API_KEY", "FMP_PLAN")
+
+
+def bootstrap_secrets() -> None:
+    """Copy keys from Streamlit secrets (website version) into the environment, where the data code reads them."""
     import os
-    if os.environ.get("WATCHLIST_GITHUB_TOKEN"):
-        return
-    try:
-        tok = st.secrets.get("WATCHLIST_GITHUB_TOKEN")
-    except Exception:  # no secrets configured
-        tok = None
-    if tok:
-        os.environ["WATCHLIST_GITHUB_TOKEN"] = str(tok)
+    for name in SECRET_NAMES:
+        if os.environ.get(name):
+            continue
+        try:
+            val = st.secrets.get(name)
+        except Exception:  # no secrets configured
+            val = None
+        if val:
+            os.environ[name] = str(val)
+
+
+_bootstrap_secrets = bootstrap_secrets
+
+
+def data_source_caption(co) -> str:
+    """One line saying where the numbers came from."""
+    from analysis import fmp
+    if co.is_demo:
+        return ""
+    by_src: dict[str, list[str]] = {}
+    for kind in ("financials", "estimates", "prices", "peers"):
+        if kind in co.sources:
+            by_src.setdefault(co.sources[kind], []).append(kind)
+    parts = [f"{src} ({', '.join(kinds)})" for src, kinds in by_src.items()]
+    line = "Data: " + " · ".join(parts) if parts else ""
+    if fmp.enabled():
+        line += f" · FMP requests since the app started today: {fmp.calls_today()}"
+        if fmp.plan() == "free":
+            line += " of 250/day (repeat views are cached)"
+    if co.sources.get("note"):
+        line += f" · ⚠ {co.sources['note']}"
+    return line
 
 
 def load_watchlist():

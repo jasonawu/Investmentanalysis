@@ -91,14 +91,7 @@ def load_yfinance(ticker: str, with_peers: bool = True, max_peers: int = 8) -> C
     except Exception:
         pass
 
-    peers: list[str] = []
-    if with_peers and info.get("industryKey"):
-        try:
-            top = yf.Industry(info["industryKey"]).top_companies
-            if top is not None and not top.empty:
-                peers = [s for s in top.index.tolist() if s.upper() != ticker.upper()][:max_peers]
-        except Exception:
-            peers = []
+    peers = _industry_peers(yf, ticker, info, max_peers) if with_peers else []
 
     price = info.get("currentPrice") or info.get("regularMarketPrice") or (float(prices.iloc[-1]) if len(prices) else None)
     mcap, ev = info.get("marketCap"), info.get("enterpriseValue")
@@ -113,7 +106,40 @@ def load_yfinance(ticker: str, with_peers: bool = True, max_peers: int = 8) -> C
         currency=info.get("currency", "USD"), price=price,
         market_cap=mcap, enterprise_value=ev, shares=shares, net_debt=net_debt,
         prices=prices, annual=annual, quarterly=quarterly, estimates=est, peers=peers,
+        sources={"financials": "Yahoo", "estimates": "Yahoo", "prices": "Yahoo"},
     )
+
+
+def _industry_peers(yf, ticker: str, info: dict, max_peers: int = 8) -> list[str]:
+    """Largest companies in the same Yahoo industry."""
+    if not info.get("industryKey"):
+        return []
+    try:
+        top = yf.Industry(info["industryKey"]).top_companies
+        if top is not None and not top.empty:
+            return [s for s in top.index.tolist() if s.upper() != ticker.upper()][:max_peers]
+    except Exception:
+        pass
+    return []
+
+
+def yahoo_peers(ticker: str, max_peers: int = 8) -> list[str]:
+    try:
+        import yfinance as yf
+        return _industry_peers(yf, ticker, yf.Ticker(ticker).info or {}, max_peers)
+    except Exception:
+        return []
+
+
+def yahoo_prices(ticker: str) -> pd.Series:
+    try:
+        import yfinance as yf
+        hist = yf.Ticker(ticker).history(period="max", auto_adjust=True)
+        p = hist["Close"].copy()
+        p.index = pd.to_datetime(p.index).tz_localize(None)
+        return p
+    except Exception:
+        return pd.Series(dtype=float)
 
 
 # --------------------------------------------------------------------------- #
@@ -230,6 +256,37 @@ def load_demo(ticker: str, with_peers: bool = True) -> CompanyData:
 
 
 def load_company(ticker: str, with_peers: bool = True) -> CompanyData:
+    """Load a company from the best available source.
+
+    DEMO* tickers -> offline demo data. Otherwise FMP when an FMP key is configured (on the free plan
+    only for the main company, not for peers), filling any gaps from Yahoo; else Yahoo.
+    with_peers=False is how peers are loaded.
+    """
     if ticker.upper().startswith("DEMO"):
         return load_demo(ticker, with_peers)
-    return load_yfinance(ticker, with_peers)
+    from . import fmp
+
+    note = None
+    if fmp.enabled() and (with_peers or fmp.plan() == "paid"):
+        try:
+            c = fmp.load(ticker, with_peers=with_peers)
+        except fmp.FMPError as e:
+            note = f"FMP unavailable ({e}); using Yahoo"
+        else:
+            if with_peers:
+                yp = yahoo_peers(ticker)  # Yahoo's industry peers are better for US stocks
+                if yp:
+                    c.peers, c.sources["peers"] = yp, "Yahoo"
+                elif c.peers:
+                    c.sources["peers"] = "FMP"
+            if c.prices.empty:
+                c.prices = yahoo_prices(ticker)
+                if not c.prices.empty:
+                    c.sources["prices"] = "Yahoo"
+            return c
+    c = load_yfinance(ticker, with_peers)
+    if with_peers and c.peers:
+        c.sources["peers"] = "Yahoo"
+    if note:
+        c.sources["note"] = note
+    return c

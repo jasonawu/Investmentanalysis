@@ -12,7 +12,7 @@ from analysis import watchlist as W
 from analysis.data import demo_tickers
 from analysis.models import FUNDAMENTALS, LABELS
 from views.common import (AQUA, BLUE, FAIR_BAND, GRAY, ORANGE, RED, basis_control, chart,
-                          as_text, fmt_money, get_company, get_peers, lens_label, load_watchlist, metric_value_fmt,
+                          as_text, data_source_caption, fmt_money, get_company, get_peers, lens_label, load_watchlist, metric_value_fmt,
                           pct, save_watchlist, show_save_error)
 
 # --------------------------------------------------------------------------- #
@@ -117,6 +117,8 @@ st.caption(" · ".join(x for x in [co.sector, co.industry, f"Market cap {fmt_mon
                                    f"{co.estimates.analysts} analysts" if co.estimates.analysts else ""] if x))
 if co.is_demo:
     st.info("Showing **synthetic demo data** (fictional companies). Enter a real ticker to pull live data.")
+elif data_source_caption(co):
+    st.caption(data_source_caption(co))
 
 k = st.columns(6)
 k[0].metric("Price", f"{cur}{co.price:,.2f}" if co.price else "—")
@@ -184,21 +186,27 @@ with tabs[0]:
             hollow = dict(size=8, symbol="circle-open", line=dict(width=2))
 
             # Revenue: reported (solid) then consensus for unreported quarters (dashed).
+            def beat_text(series):
+                return [("" if pd.isna(x) else (f" · beat {x*100:+.1f}%" if x >= 0 else f" · miss {x*100:+.1f}%"))
+                        for x in series]
+
+            yoy_txt = [("" if pd.isna(v) else f" (YoY {v:+.1f}%)") for v in yoy.reindex(act.index)]
             fig.add_scatter(x=act.index, y=act["revenue"] / 1e9, name="Revenue", mode="lines+markers", yaxis="y2",
                             line=dict(color=AQUA, width=2), marker=dict(size=8),
-                            customdata=yoy.reindex(act.index).to_numpy(),
-                            hovertemplate=f"{cur}%{{y:,.2f}}B (YoY %{{customdata:+.1f}}%)")
-            if len(fut):
-                bridge = act.tail(1) if len(act) else act
-                rc = pd.concat([bridge, fut])
-                fig.add_scatter(x=rc.index, y=rc["revenue"] / 1e9, name="Revenue consensus", yaxis="y2",
+                            customdata=[a + b for a, b in zip(yoy_txt, beat_text(act["revenue_surprise"]))],
+                            hovertemplate=f"{cur}%{{y:,.2f}}B%{{customdata}}")
+            # Revenue consensus: what analysts expected for recent quarters (when the source has it) and
+            # the forecast for unreported quarters.
+            rc = qw.dropna(subset=["revenue_consensus"])
+            if len(rc) and not (~rc["estimated"]).any() and len(act):
+                rc = pd.concat([act.tail(1).assign(revenue_consensus=act["revenue"].iloc[-1]), rc])
+            if len(rc):
+                fig.add_scatter(x=rc.index, y=rc["revenue_consensus"] / 1e9, name="Revenue consensus", yaxis="y2",
                                 mode="lines+markers", line=dict(color=AQUA, width=2, dash="dash"), marker=hollow,
-                                customdata=yoy.reindex(rc.index).to_numpy(),
-                                hovertemplate=f"{cur}%{{y:,.2f}}B est. (YoY %{{customdata:+.1f}}%)")
+                                hovertemplate=f"{cur}%{{y:,.2f}}B")
 
             # EPS: reported (solid) vs consensus (dashed) for the same quarters, then consensus ahead.
-            beat = [("" if pd.isna(x) else (f" · beat {x*100:+.1f}%" if x >= 0 else f" · miss {x*100:+.1f}%"))
-                    for x in act["eps_surprise"]]
+            beat = beat_text(act["eps_surprise"])
             fig.add_scatter(x=act.index, y=act["eps"], name="EPS (diluted)", mode="lines+markers", yaxis="y3",
                             line=dict(color=ORANGE, width=2), marker=dict(size=8), customdata=beat,
                             hovertemplate=f"{cur}%{{y:,.2f}}%{{customdata}}")
@@ -229,10 +237,10 @@ with tabs[0]:
                 earliest = co.quarterly.index.min() if len(co.quarterly) else None
                 note = (f" Yahoo only provides quarterly results back to {earliest:%b %Y}, so the lines start there."
                         if earliest is not None and earliest > start + pd.DateOffset(months=3) else "")
-                st.caption("Solid lines are reported results; dashed lines are analyst consensus. For EPS the "
-                           "dashed line shows what analysts expected each quarter, so the gap between the two is "
-                           "the beat or miss (Yahoo provides this for the last 4 quarters). Points sit at each "
-                           "quarter's end date." + note)
+                st.caption("Solid lines are reported results; dashed lines are analyst consensus. Where the "
+                           "dashed line runs alongside the solid one, it shows what analysts expected that quarter, "
+                           "so the gap is the beat or miss (recent quarters only; revenue needs FMP data). Points "
+                           "sit at each quarter's end date." + note)
     else:
         st.write("No price history available.")
 

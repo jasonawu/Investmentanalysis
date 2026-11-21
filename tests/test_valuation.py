@@ -111,3 +111,11 @@ def test_quarterly_view_surprise_works_for_losses():
     past = qv[~qv["estimated"]].dropna(subset=["eps_consensus"])
     assert len(past) == 4 and past["eps_surprise"].notna().all()
     assert qv["estimated"].sum() == 2
+
+
+def test_no_forward_values_before_available_history():
+    c = _co()
+    fy = V.fiscal_table(c, "eps")
+    assert V.ntm_value_at(pd.Timestamp("2015-06-30"), fy) is None
+    h = V.multiple_history(c, "pe")
+    assert h.index.min() >= pd.Timestamp("2023-01-01")

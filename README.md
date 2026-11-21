@@ -36,6 +36,29 @@ A black window opens. The first time, it spends a few minutes installing things.
 
 **For people comfortable with a terminal:** `pip install -r requirements.txt`, then `streamlit run app.py`.
 
+## Real data from Financial Modeling Prep (FMP)
+
+Without any setup, the app uses free Yahoo Finance data. Adding an FMP key makes FMP the main source, with Yahoo filling any gaps.
+
+**What FMP adds, even on the free plan**
+- Analyst forecasts up to 5 years ahead, including **real EBITDA and EBIT forecasts** (instead of revenue × latest margin)
+- **Revenue and EPS forecast vs actual** for recent quarters, plus next quarter's forecast
+- An official service, so it's more reliable on the website than Yahoo
+
+**What still needs a paid FMP plan:** more than 5 years of annual / 5 quarters of quarterly history, quarterly forecasts beyond next quarter, and longer forecast-vs-actual history.
+
+**Setup on the website**
+1. At share.streamlit.io, open your app's **⋮** menu → **Settings** → **Secrets**.
+2. Add this line under the GitHub line that's already there, with your key between the quotes, then **Save**:
+   ```
+   FMP_API_KEY = "your_fmp_key"
+   ```
+3. If you upgrade to a paid FMP plan, add `FMP_PLAN = "paid"` as well so the app uses FMP for peers too.
+
+**Setup on your own computer:** in the app folder, create a folder called `.streamlit` and in it a text file called `secrets.toml` containing the same line(s). It is never uploaded to GitHub.
+
+**The free plan's 250 requests a day:** each stock you open uses about 8, so the app uses FMP for the stocks you open and your watchlist, loads peers from Yahoo, and remembers results for 12 hours. The line under the company name shows where each number came from and how many FMP requests have been used. If the daily limit is reached, the app switches to Yahoo automatically and says so.
+
 ## Saving the watchlist on the website
 
 The website version (Streamlit Community Cloud) wipes files whenever the app restarts, so the watchlist needs somewhere permanent to live. The app can save it to **your own GitHub account** as a *secret gist* (a small private note). It isn't listed or searchable; only someone with its exact web address could see it, and it contains only your tickers, multiples and notes.
@@ -90,13 +113,14 @@ views/watchlist.py     Watchlist ranking page
 views/common.py        Shared cached loaders, formatting, controls
 analysis/watchlist.py  Watchlist JSON storage
 analysis/models.py     CompanyData / Estimates containers
-analysis/data.py       Data providers: yfinance (live) and demo (offline)
+analysis/data.py       Data providers: picks FMP, Yahoo or demo data
+analysis/fmp.py        Financial Modeling Prep provider
 analysis/valuation.py  Pure valuation math: NTM EPS, forward P/E history, peers, fair multiple, scenarios
 tests/                 pytest unit tests (`python -m pytest`)
 ```
 
 ## Known limitations and next steps
-- **Data depth**: Yahoo gives about 4 years of annual and 5 quarters of quarterly statements, and consensus only for the current and next fiscal year. A paid source (e.g. Financial Modeling Prep, FactSet, Koyfin) would add 10+ years of history, **true historical consensus estimates** and FY+2 estimates. Plug one in by adding a loader to `analysis/data.py` that returns `CompanyData`.
+- **Data depth**: free data (Yahoo, or FMP's free plan) gives about 5 years of annual and 5 quarters of quarterly statements. A paid FMP plan adds decades of history and quarterly forecasts. **Historical consensus** (what analysts expected on each past date, for a truly point-in-time forward P/E history) needs a professional source such as FactSet or LSEG I/B/E/S.
 - **Peers**: filled in automatically from Yahoo's list of the industry's largest companies; check and edit the list in the sidebar.
 - Possible additions: saved theses, earnings-revision alerts, sector-specific lenses (e.g. P/B for banks).
 
