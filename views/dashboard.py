@@ -164,36 +164,42 @@ with tabs[0]:
             if (show_q and len(q)) else q.iloc[0:0]
         panels = show_q and len(qw) > 0
 
-        fig = make_subplots(rows=2 if panels else 1, cols=1, shared_xaxes=True, vertical_spacing=0.06,
-                            row_heights=[0.6, 0.4] if panels else [1.0],
-                            subplot_titles=[f"Share price ({co.currency})", "Quarterly revenue & EBIT (billions)"]
-                            if panels else None)
+        # Price, revenue and EBIT stacked tightly on ONE shared date axis (so the hover guide line and
+        # tooltip cover all three); each panel has its own y scale so quarter-to-quarter changes are as
+        # visible as moves in the stock.
+        fig = go.Figure()
         fig.add_scatter(x=s.index, y=s, mode="lines", line=dict(color=BLUE, width=2), name="Close",
-                        hovertemplate=f"{cur}%{{y:,.2f}}", row=1, col=1)
+                        hovertemplate=f"{cur}%{{y:,.2f}}")
         if len(s) > 50:
             ma = px.rolling(50).mean().reindex(s.index)
             fig.add_scatter(x=ma.index, y=ma, mode="lines", name="50-day avg",
-                            line=dict(color=GRAY, width=1.5, dash="dot"), hovertemplate=f"{cur}%{{y:,.2f}}",
-                            row=1, col=1)
+                            line=dict(color=GRAY, width=1.5, dash="dot"), hovertemplate=f"{cur}%{{y:,.2f}}")
+        axes = dict(yaxis=dict(title=f"Price ({co.currency})", domain=[0, 1]))
         if panels:
             # Year-over-year growth needs the quarter 4 periods earlier, which may sit outside the window.
             yoy = q.pct_change(4, fill_method=None).reindex(qw.index)
             margin = qw["ebit"] / qw["revenue"]
-            qlabel = [f"Qtr ended {d:%b %d, %Y}" for d in qw.index]
-            fig.add_scatter(x=qw.index, y=qw["revenue"] / 1e9, name="Revenue", mode="lines+markers",
-                        line=dict(color=AQUA, width=2), marker=dict(size=8), row=2, col=1,
-                        customdata=np.c_[qlabel, yoy["revenue"] * 100],
-                        hovertemplate=f"%{{customdata[0]}}<br>Revenue {cur}%{{y:,.2f}}B"
-                                      "<br>YoY %{customdata[1]:+.1f}%<extra></extra>")
-            fig.add_scatter(x=qw.index, y=qw["ebit"] / 1e9, name="EBIT", mode="lines+markers",
-                        line=dict(color=ORANGE, width=2), marker=dict(size=8), row=2, col=1,
-                        customdata=np.c_[qlabel, yoy["ebit"] * 100, margin * 100],
-                        hovertemplate=f"%{{customdata[0]}}<br>EBIT {cur}%{{y:,.2f}}B"
-                                      "<br>YoY %{customdata[1]:+.1f}%<br>Margin %{customdata[2]:.1f}%<extra></extra>")
-            fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=2, col=1)
-            fig.update_xaxes(range=[s.index.min() - pd.Timedelta(days=5), s.index.max() + pd.Timedelta(days=5)])
-        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%")
-        chart(fig, 600 if panels else 420)
+            fig.add_scatter(x=qw.index, y=qw["revenue"] / 1e9, name="Revenue", mode="lines+markers", yaxis="y2",
+                            line=dict(color=AQUA, width=2), marker=dict(size=8),
+                            customdata=np.c_[yoy["revenue"] * 100],
+                            hovertemplate=f"{cur}%{{y:,.2f}}B (YoY %{{customdata[0]:+.1f}}%)")
+            fig.add_scatter(x=qw.index, y=qw["ebit"] / 1e9, name="EBIT", mode="lines+markers", yaxis="y3",
+                            line=dict(color=ORANGE, width=2), marker=dict(size=8),
+                            customdata=np.c_[yoy["ebit"] * 100, margin * 100],
+                            hovertemplate=f"{cur}%{{y:,.2f}}B (YoY %{{customdata[0]:+.1f}}%, "
+                                          "margin %{customdata[1]:.1f}%)")
+            axes = dict(yaxis=dict(title=f"Price ({co.currency})", domain=[0.47, 1]),
+                        yaxis2=dict(title=f"Revenue ({cur.strip()}B)", domain=[0.245, 0.455]),
+                        yaxis3=dict(title=f"EBIT ({cur.strip()}B)", domain=[0, 0.21]),
+                        xaxis=dict(anchor="y3"))  # dates along the bottom of the stack
+            if (qw["ebit"] < 0).any():
+                fig.add_hline(y=0, line=dict(color=GRAY, width=1), yref="y3")
+        fig.update_layout(**axes)
+        fig.update_xaxes(range=[s.index.min() - pd.Timedelta(days=5), s.index.max() + pd.Timedelta(days=5)],
+                         showspikes=True, spikemode="across", spikesnap="cursor", spikethickness=1,
+                         spikedash="dot", spikecolor=GRAY)
+        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%", hoversubplots="axis")
+        chart(fig, 640 if panels else 420)
         if show_q:
             if not len(q):
                 st.caption("No quarterly results available for this company.")
@@ -203,8 +209,8 @@ with tabs[0]:
                 earliest = q.index.min()
                 note = (f" Yahoo only provides quarterly results back to {earliest:%b %Y}, so the lines "
                         f"start there." if earliest > start + pd.DateOffset(months=3) else "")
-                st.caption("Each point is a quarter's result, plotted at the quarter's end date; hover for "
-                           "year-over-year growth and EBIT margin." + note)
+                st.caption("Each point is a quarter's result, plotted at the quarter's end date. Hover anywhere to "
+                           "line up the price with revenue and EBIT; near a quarter you also see YoY growth and margin." + note)
     else:
         st.write("No price history available.")
 
