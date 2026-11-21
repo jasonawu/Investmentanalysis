@@ -20,14 +20,21 @@ Enter a ticker and the dashboard answers: *what multiple is the market paying, w
 - A lens is marked **not meaningful** when its forward fundamental is negative or the multiple is extreme (P/E > 150x, EV/EBITDA > 100x, P/S > 60x).
 - Every fair-multiple method (peer median, growth-adjusted, regression, own history) runs on each lens. P/E is judged against EPS growth; EV/EBITDA and P/S against revenue growth.
 
-## Run it
+## How to run it (no technical knowledge needed)
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
+**One-time setup**
+1. **Install Python** from https://www.python.org/downloads/ (click the big yellow Download button).
+   - **Windows:** on the first installer screen, tick **"Add python.exe to PATH"** before clicking Install.
+   - **Mac:** open the downloaded file and click through the installer.
+2. **Download this tool**: on the GitHub page, switch to the branch `claude/investment-analysis-dashboard-acktlb`, click the green **Code** button, then **Download ZIP**. Unzip it (double-click the ZIP file) and move the folder somewhere easy to find, such as Documents.
 
-Type any Yahoo Finance ticker (e.g. `MSFT`, `NVDA`). Tickers starting with `DEMO` load offline sample data made up for testing. `DEMOG` and `DEMOH` are pre-profit fast growers valued on P/S.
+**Every time you want to use it**
+- **Windows:** open the folder and double-click **`run_windows.bat`**. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
+- **Mac:** open the folder, **right-click `run_mac.command` → Open**, then click **Open** again. (Right-clicking is only needed the first time; after that a double-click works.)
+
+A black window opens. The first time, it spends a few minutes installing things. Then the dashboard opens in your web browser. **Keep the black window open** while you use the dashboard; close it when you're done.
+
+**For people comfortable with a terminal:** `pip install -r requirements.txt`, then `streamlit run app.py`.
 
 ## What's on the dashboard
 
