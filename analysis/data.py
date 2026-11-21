@@ -71,6 +71,26 @@ def load_yfinance(ticker: str, with_peers: bool = True, max_peers: int = 8) -> C
     if trend is not None and not getattr(trend, "empty", True) and "+1y" in trend.index:
         est.eps_fy1_trend = {k: float(v) for k, v in trend.loc["+1y"].items() if pd.notna(v)}
 
+    # Consensus for the next two unreported quarters ("0q" = current, "+1q" = next).
+    if len(quarterly):
+        last_q = quarterly.index.max()
+        for i, period in enumerate(["0q", "+1q"], start=1):
+            rev_q, eps_q = _est(re_, period), _est(ee, period)
+            if rev_q is not None or eps_q is not None:
+                end = last_q + pd.DateOffset(months=3 * i) + pd.offsets.MonthEnd(0)
+                est.quarters.append({"end": end, "revenue": rev_q, "eps": eps_q})
+
+    # Consensus EPS vs actual for recently reported quarters (beat / miss history).
+    try:
+        eh = t.earnings_history
+        if eh is not None and not eh.empty and {"epsEstimate", "epsActual"} <= set(eh.columns):
+            eh = eh[["epsEstimate", "epsActual"]].rename(columns={"epsEstimate": "eps_estimate",
+                                                                   "epsActual": "eps_actual"})
+            eh.index = pd.to_datetime(eh.index).tz_localize(None).normalize()
+            est.eps_surprises = eh.apply(pd.to_numeric, errors="coerce").dropna(how="all").sort_index()
+    except Exception:
+        pass
+
     peers: list[str] = []
     if with_peers and info.get("industryKey"):
         try:
@@ -152,6 +172,21 @@ def load_demo(ticker: str, with_peers: bool = True) -> CompanyData:
         for i in range(4):
             q_idx.append(d - pd.DateOffset(months=9 - 3 * i))
             q_rows.append(row * season[i])
+    # Quarters of the current fiscal year that have already ended count as reported, using the FY0 path.
+    fy0_row = pd.Series({"revenue": rev[10] * 1e9, "ebitda": ebitda[10] * 1e9, "ebit": ebit[10] * 1e9,
+                         "eps": eps[10]})
+    fy1_row = pd.Series({"revenue": rev[11] * 1e9, "ebitda": ebitda[11] * 1e9, "ebit": ebit[11] * 1e9,
+                         "eps": eps[11]})
+    future = []  # (end, row) for quarters not yet reported
+    for fy_end, row in [(last_fy + pd.DateOffset(years=1), fy0_row), (last_fy + pd.DateOffset(years=2), fy1_row)]:
+        for i in range(4):
+            q_end = fy_end - pd.DateOffset(months=9 - 3 * i) + pd.offsets.MonthEnd(0)
+            vals = row * season[i] * (1 + rng.normal(0, 0.02))
+            if q_end + pd.Timedelta(days=30) < today:  # ended and reported (~a month after quarter end)
+                q_idx.append(q_end)
+                q_rows.append(vals)
+            else:
+                future.append((q_end, vals))
     quarterly = pd.DataFrame(q_rows, index=pd.DatetimeIndex(q_idx)).sort_index()
 
     est = Estimates(eps_fy0=float(eps[10]), eps_fy1=float(eps[11]),
@@ -160,6 +195,11 @@ def load_demo(ticker: str, with_peers: bool = True) -> CompanyData:
                     eps_fy1_trend={"current": float(eps[11]), "7daysAgo": float(eps[11] * 0.998),
                                    "30daysAgo": float(eps[11] * 0.99), "60daysAgo": float(eps[11] * 0.985),
                                    "90daysAgo": float(eps[11] * 0.97)})
+    est.quarters = [{"end": d, "revenue": float(v["revenue"]), "eps": float(v["eps"])} for d, v in future[:2]]
+    recent = quarterly.tail(4)
+    surprise = rng.normal(0.03, 0.04, len(recent))  # companies tend to beat slightly
+    est.eps_surprises = pd.DataFrame({"eps_estimate": recent["eps"].to_numpy() / (1 + surprise),
+                                      "eps_actual": recent["eps"].to_numpy()}, index=recent.index)
 
     # Price = forward EPS x forward P/E (or forward sales/share x P/S); the multiple mean-reverts with noise.
     cdata = CompanyData(ticker=key, name=name, annual=annual, estimates=est)

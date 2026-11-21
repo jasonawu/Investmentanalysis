@@ -464,3 +464,46 @@ def summarize(c: CompanyData, peers: list[CompanyData], basis: str = "ntm", meth
         **{f"current_{k}": v["current"] for k, v in by_metric.items()},
         "n_peers": len(peers), "table": table, "by_metric": by_metric,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Quarterly results with consensus fill-in
+# --------------------------------------------------------------------------- #
+def quarterly_view(c: CompanyData) -> pd.DataFrame:
+    """Reported quarters plus consensus for the next unreported quarters, one row per quarter end.
+
+    Columns:
+      revenue, eps     reported values; for unreported quarters, the consensus estimate
+      estimated        True for quarters not yet reported
+      eps_consensus    consensus EPS for the quarter (recent reported quarters and unreported ones)
+      eps_surprise     actual / consensus - 1 (beat > 0, miss < 0), where both are known
+    """
+    cols = ["revenue", "eps", "estimated", "eps_consensus", "eps_surprise"]
+    q = c.quarterly.sort_index()
+    out = pd.DataFrame({"revenue": q["revenue"], "eps": q["eps"], "estimated": False,
+                        "eps_consensus": np.nan, "eps_surprise": np.nan}, index=q.index)[cols] \
+        if len(q) else pd.DataFrame(columns=cols)
+    s = c.estimates.eps_surprises
+    if len(s) and len(q):
+        # Match each consensus row to the reported quarter ending closest to it (within ~3 weeks).
+        for d, r in s.iterrows():
+            gaps = abs(q.index - d)
+            k = gaps.argmin()
+            if gaps[k] <= pd.Timedelta(days=21):
+                qd = q.index[k]
+                out.loc[qd, "eps_consensus"] = r.get("eps_estimate")
+                if pd.notna(r.get("eps_actual")):
+                    out.loc[qd, "eps"] = r.get("eps_actual")  # same basis as the consensus
+    for e in c.estimates.quarters:
+        if e["end"] in out.index:
+            continue
+        out.loc[e["end"]] = {"revenue": e.get("revenue"), "eps": e.get("eps"), "estimated": True,
+                             "eps_consensus": e.get("eps"), "eps_surprise": np.nan}
+    out = out.sort_index()
+    for col in ["revenue", "eps", "eps_consensus", "eps_surprise"]:
+        out[col] = pd.to_numeric(out[col], errors="coerce")
+    out["estimated"] = out["estimated"].fillna(False).astype(bool)
+    rep = ~out["estimated"] & out["eps_consensus"].notna() & out["eps_consensus"].ne(0)
+    out.loc[rep, "eps_surprise"] = (out.loc[rep, "eps"] - out.loc[rep, "eps_consensus"]) \
+        / out.loc[rep, "eps_consensus"].abs()
+    return out

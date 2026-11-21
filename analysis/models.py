@@ -22,6 +22,10 @@ class Estimates:
     analysts: int | None = None
     # EPS estimate for next FY as it stood N days ago -> shows estimate revisions.
     eps_fy1_trend: dict[str, float] = field(default_factory=dict)
+    # Next unreported quarters: [{"end": Timestamp, "revenue": float|None, "eps": float|None}, ...]
+    quarters: list[dict] = field(default_factory=list)
+    # Recent reported quarters, consensus EPS vs actual: index = quarter end, columns eps_estimate, eps_actual.
+    eps_surprises: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=["eps_estimate", "eps_actual"]))
 
 
 @dataclass

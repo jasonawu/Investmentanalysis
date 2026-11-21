@@ -92,3 +92,22 @@ def test_summarize_and_overrides():
     mine = V.summarize(c, peers, overrides={"ps": 9.0}, lens="ps")
     assert mine["fair"] == 9.0 and mine["custom"] and mine["lens"] == "ps"
     assert V.verdict(0.2) == "Undervalued" and V.verdict(-0.2) == "Overvalued" and V.verdict(0.05) == "Fair"
+
+
+def test_quarterly_view_fills_estimates_and_consensus():
+    c = load_company("DEMO")
+    qv = V.quarterly_view(c)
+    future = qv[qv["estimated"]]
+    assert len(future) == 2 and (future.index > c.quarterly.index.max()).all()
+    assert future[["revenue", "eps", "eps_consensus"]].notna().all().all()
+    past = qv[~qv["estimated"]].dropna(subset=["eps_consensus"])
+    assert len(past) == 4
+    beat = past["eps"] > past["eps_consensus"]
+    assert ((past["eps_surprise"] > 0) == beat).all()
+
+
+def test_quarterly_view_surprise_works_for_losses():
+    qv = V.quarterly_view(load_company("DEMOG"))
+    past = qv[~qv["estimated"]].dropna(subset=["eps_consensus"])
+    assert len(past) == 4 and past["eps_surprise"].notna().all()
+    assert qv["estimated"].sum() == 2
