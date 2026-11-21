@@ -421,17 +421,30 @@ with tabs[3]:
     else:
         mu, sd = hh["multiple"].mean(), hh["multiple"].std()
         fig = go.Figure()
+        # Share price on its own right-hand axis, drawn first (underneath) and light so the multiple stays
+        # the focus. Daily prices over the same period as the multiple history.
+        px_hist = co.prices[(co.prices.index >= hh.index.min()) & (co.prices.index <= hh.index.max())]
+        if len(px_hist):
+            fig.add_scatter(x=px_hist.index, y=px_hist, mode="lines", name=f"Share price ({co.currency}, right axis)",
+                            yaxis="y2", line=dict(color="#a8a6a0", width=1.5, dash="dot"), opacity=0.9,
+                            hovertemplate=f"{cur}%{{y:,.2f}}")
         fig.add_hrect(y0=mu - sd, y1=mu + sd, fillcolor=GRAY, opacity=0.12, line_width=0)
         fig.add_hline(y=mu, line=dict(color=GRAY, dash="dash", width=1.5),
                       annotation_text=f"avg {mu:.1f}x", annotation_position="top left")
-        fig.add_scatter(x=hh.index, y=hh["multiple"], mode="lines", line=dict(color=BLUE, width=2),
-                        name=HM.label, hovertemplate="%{y:.1f}x")
+        fig.add_scatter(x=hh.index, y=hh["multiple"], mode="lines", line=dict(color=BLUE, width=2.5),
+                        name=f"{HM.label} (left axis)", hovertemplate="%{y:.1f}x")
         if he["fair"]:
             fig.add_hline(y=he["fair"], line=dict(color=ORANGE, width=2),
                           annotation_text=f"fair {he['fair']:.1f}x", annotation_position="bottom right")
         fig.update_layout(title=f"{HM.label} · now {hh['multiple'].iloc[-1]:.1f}x · band = ±1σ ({mu-sd:.1f}x–{mu+sd:.1f}x)",
-                          yaxis_title=f"x forward {HM.field_label}")
-        chart(fig, 400)
+                          yaxis_title=f"{HM.short} (x forward {HM.field_label})",
+                          yaxis2=dict(title=f"Share price ({co.currency})", overlaying="y", side="right",
+                                      showgrid=False, zeroline=False, color="#8c8b87", tickmode="auto",
+                                      nticks=6, tickformat=",.0f"))
+        chart(fig, 420)
+        st.caption("Blue = the multiple (left axis); dotted gray = share price (right axis, own scale). When the "
+                   "price rises faster than the multiple, earnings growth is doing the work; when both move "
+                   "together, the move is mostly re-rating.")
 
         st.subheader(f"What drove the stock: {HM.field_label} growth vs. multiple")
         yrs = st.select_slider("Look-back", options=[1, 2, 3, 5, 10], value=3, format_func=lambda y: f"{y}y")
