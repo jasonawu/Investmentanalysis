@@ -40,10 +40,11 @@ def get_peers(tickers: tuple[str, ...]) -> tuple[list[CompanyData], list[str]]:
 def fmt_money(x: float | None, cur: str = "$") -> str:
     if x is None or not np.isfinite(x):
         return "—"
+    sign, x = ("−" if x < 0 else ""), abs(x)
     for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
-        if abs(x) >= div:
-            return f"{cur}{x/div:,.1f}{suf}"
-    return f"{cur}{x:,.2f}"
+        if x >= div:
+            return f"{sign}{cur}{x/div:,.1f}{suf}"
+    return f"{sign}{cur}{x:,.2f}"
 
 
 def pct(x) -> str:
@@ -77,3 +78,24 @@ def basis_control() -> tuple[str, str]:
 def open_in_dashboard(ticker: str):
     st.session_state["selected_ticker"] = ticker
     st.switch_page("views/dashboard.py")
+
+
+def lens_label(key: str) -> str:
+    return "Auto" if key == "auto" else V.METRICS[key].short
+
+
+def metric_value_fmt(v: float | None, m: "V.Metric", cur: str = "$") -> str:
+    """Format a forward fundamental: EPS per share, EBITDA/revenue as totals."""
+    if v is None or not np.isfinite(v):
+        return "—"
+    return (f"−{cur}{-v:,.2f}" if v < 0 else f"{cur}{v:,.2f}") if m.per_share else fmt_money(v, cur)
+
+
+def as_text(df, fmts: dict[str, str], na: str = "—"):
+    """Format numeric columns as text so empty values show as a dash (Streamlit renders NaN as 'None')."""
+    out = df.copy()
+    for col, f in fmts.items():
+        if col in out:
+            out[col] = [na if (v is None or (isinstance(v, float) and not np.isfinite(v))) else f.format(v)
+                        for v in out[col]]
+    return out

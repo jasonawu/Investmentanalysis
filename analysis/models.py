@@ -34,6 +34,8 @@ class CompanyData:
     price: float | None = None
     market_cap: float | None = None
     enterprise_value: float | None = None
+    shares: float | None = None          # diluted shares outstanding
+    net_debt: float | None = None        # debt - cash (negative = net cash)
     # Daily close prices, DatetimeIndex -> float.
     prices: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     # Annual reported fundamentals: index = fiscal period end, columns = FUNDAMENTALS.
