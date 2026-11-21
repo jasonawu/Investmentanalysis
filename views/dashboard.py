@@ -12,12 +12,14 @@ from analysis import watchlist as W
 from analysis.data import demo_tickers
 from analysis.models import FUNDAMENTALS, LABELS
 from views.common import (AQUA, BLUE, FAIR_BAND, GRAY, ORANGE, RED, basis_control, chart,
-                          as_text, fmt_money, get_company, get_peers, lens_label, metric_value_fmt, pct)
+                          as_text, fmt_money, get_company, get_peers, lens_label, load_watchlist, metric_value_fmt,
+                          pct, save_watchlist, show_save_error)
 
 # --------------------------------------------------------------------------- #
 # Sidebar: stock, basis, peers
 # --------------------------------------------------------------------------- #
-wl = W.load()
+wl = load_watchlist()
+show_save_error()
 with st.sidebar:
     st.header("Stock")
     ticker = st.text_input("Ticker", value=st.session_state.get("selected_ticker", "DEMO"),
@@ -92,15 +94,15 @@ with st.sidebar:
                                                   "(and your fair multiple, if set)"):
             wl.set_lens(co.ticker, lens_choice)
             wl.set_fair(co.ticker, metric, my_mult if override else None)
-            W.save(wl); st.rerun()
+            save_watchlist(wl); st.rerun()
         if b2.button("Remove"):
-            wl.remove(co.ticker); W.save(wl); st.rerun()
+            wl.remove(co.ticker); save_watchlist(wl); st.rerun()
     elif st.button(f"☆ Add {co.ticker} to watchlist", width="stretch"):
         wl.add(co.ticker)
         wl.set_lens(co.ticker, lens_choice)
         if override:
             wl.set_fair(co.ticker, metric, my_mult)
-        W.save(wl); st.rerun()
+        save_watchlist(wl); st.rerun()
 
 h = ev[metric]
 fwd, cur_mult, fair, fair_value, upside = h["fwd"], h["current"], h["fair"], h["fair_value"], h["upside"]

@@ -36,6 +36,28 @@ A black window opens. The first time, it spends a few minutes installing things.
 
 **For people comfortable with a terminal:** `pip install -r requirements.txt`, then `streamlit run app.py`.
 
+## Saving the watchlist on the website
+
+The website version (Streamlit Community Cloud) wipes files whenever the app restarts, so the watchlist needs somewhere permanent to live. The app can save it to **your own GitHub account** as a *secret gist* (a small private note). It isn't listed or searchable; only someone with its exact web address could see it, and it contains only your tickers, multiples and notes.
+
+**One-time setup (about 5 minutes)**
+1. **Create a key on GitHub.** Sign in at github.com, click your profile picture (top right) → **Settings** → **Developer settings** (bottom of the left menu) → **Personal access tokens** → **Tokens (classic)** → **Generate new token** → **Generate new token (classic)**.
+   - **Note:** type `Investment dashboard watchlist`
+   - **Expiration:** choose **No expiration** (or a date; when it expires the app will warn you and you'll make a new one)
+   - **Scopes:** tick **only `gist`**. Nothing else is needed, so the key can't touch your code or settings.
+   - Click **Generate token** and **copy** the key (it starts with `ghp_`). GitHub only shows it once.
+2. **Give the key to the app.** At share.streamlit.io, open your app's **⋮** menu → **Settings** → **Secrets**, paste this line (with your key between the quotes), and click **Save**:
+   ```
+   WATCHLIST_GITHUB_TOKEN = "ghp_your_key_here"
+   ```
+3. The app restarts by itself. Open **Watchlist → Saving & backup** in the sidebar: it should say *saved to your GitHub account*. The first time you add or change a stock, the app creates the gist.
+
+**Good to know**
+- Your existing watchlist doesn't move over automatically. If you built one before, use **Download a backup** first, then **Restore from a backup file** after setup.
+- If GitHub can't be reached or the key stops working, the app shows a warning and **won't save** until it's fixed, so it can never overwrite your saved list with a blank one.
+- Running on your own computer, no setup is needed: the watchlist is saved in `watchlist.json` in the app folder. (You can also use the key there by setting the same `WATCHLIST_GITHUB_TOKEN` environment variable, so both share one watchlist.)
+- **Download a backup** (Watchlist → Saving & backup) any time for an extra copy.
+
 ## What's on the dashboard
 
 | Section | What it shows | Why it matters for the thesis |

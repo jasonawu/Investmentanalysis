@@ -99,3 +99,51 @@ def as_text(df, fmts: dict[str, str], na: str = "—"):
             out[col] = [na if (v is None or (isinstance(v, float) and not np.isfinite(v))) else f.format(v)
                         for v in out[col]]
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Watchlist storage (file locally; GitHub gist when a token is configured)
+# --------------------------------------------------------------------------- #
+def _bootstrap_secrets() -> None:
+    """Copy the watchlist token from Streamlit secrets (website version) into the environment."""
+    import os
+    if os.environ.get("WATCHLIST_GITHUB_TOKEN"):
+        return
+    try:
+        tok = st.secrets.get("WATCHLIST_GITHUB_TOKEN")
+    except Exception:  # no secrets configured
+        tok = None
+    if tok:
+        os.environ["WATCHLIST_GITHUB_TOKEN"] = str(tok)
+
+
+def load_watchlist():
+    from analysis import watchlist as W
+    _bootstrap_secrets()
+    wl = W.load()
+    if wl.load_error:
+        st.error(f"⚠ Couldn't load your saved watchlist, so changes won't be saved for now. {wl.load_error}")
+    return wl
+
+
+def save_watchlist(wl) -> bool:
+    from analysis import watchlist as W
+    try:
+        W.save(wl)
+        return True
+    except W.WatchlistSaveError as e:
+        st.session_state["wl_save_error"] = str(e)
+        return False
+
+
+def show_save_error() -> None:
+    err = st.session_state.pop("wl_save_error", None)
+    if err:
+        st.error(f"⚠ {err}")
+
+
+def storage_status() -> tuple[str, bool]:
+    from analysis import watchlist as W
+    _bootstrap_secrets()
+    s = W.storage()
+    return s.where, s.persistent_on_web

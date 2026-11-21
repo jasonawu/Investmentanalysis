@@ -11,7 +11,8 @@ import streamlit as st
 from analysis import valuation as V
 from analysis import watchlist as W
 from views.common import (BLUE, FAIR_BAND, GRAY, ORANGE, RED, basis_control, chart, get_company,
-                          get_peers, lens_label, open_in_dashboard, pct)
+                          get_peers, lens_label, load_watchlist, open_in_dashboard, pct, save_watchlist,
+                          show_save_error, storage_status)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -25,7 +26,8 @@ def rank_one(ticker: str, basis: str, methods: tuple[str, ...], n_peers: int,
     return s
 
 
-wl = W.load()
+wl = load_watchlist()
+show_save_error()
 
 # --------------------------------------------------------------------------- #
 # Sidebar
@@ -37,7 +39,7 @@ with st.sidebar:
         if st.form_submit_button("Add", width="stretch") and new:
             added = [t for t in (x.strip().upper() for x in new.split(",")) if t and wl.add(t)]
             if added:
-                W.save(wl)
+                save_watchlist(wl)
                 st.rerun()
     basis_label, basis = basis_control()
     st.header("Valuation lens")
@@ -56,6 +58,27 @@ with st.sidebar:
     if st.button("↻ Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
+    with st.expander("Saving & backup"):
+        where, durable = storage_status()
+        st.markdown(f"Your watchlist is saved to **{where}**.")
+        if not durable:
+            st.info("On the **website version** a file is wiped whenever the app restarts. To keep your "
+                    "watchlist there, add a GitHub token to the app's secrets (see *Saving the watchlist on the "
+                    "website* in the README). Running on your own computer, the file is kept.")
+        import json as _json
+        st.download_button("⬇ Download a backup", data=_json.dumps(W.to_dict(wl), indent=2),
+                           file_name="watchlist-backup.json", mime="application/json")
+        up = st.file_uploader("Restore from a backup file", type=["json"], key="wl_restore")
+        if up is not None and st.button("Replace my watchlist with this backup"):
+            try:
+                restored = W.from_dict(_json.loads(up.getvalue().decode("utf-8")))
+            except Exception:
+                st.error("That file isn't a watchlist backup.")
+            else:
+                restored.load_error = wl.load_error
+                if save_watchlist(restored):
+                    st.success(f"Restored {len(restored.tickers)} stocks.")
+                st.rerun()
 
 st.title("Watchlist")
 st.caption("Every stock you follow, ranked by upside to fair value on its valuation lens "
@@ -241,5 +264,5 @@ with st.expander("Edit watchlist: lens, your fair multiples, notes, remove"):
                 v = r[f"My {V.METRICS[m].short}"]
                 wl.set_fair(t, m, None if pd.isna(v) else float(v))
             wl.set_note(t, r["Note"] if isinstance(r["Note"], str) else "")
-        W.save(wl)
+        save_watchlist(wl)
         st.rerun()
