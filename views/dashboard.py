@@ -179,23 +179,20 @@ with tabs[0]:
             # Year-over-year growth needs the quarter 4 periods earlier, which may sit outside the window.
             yoy = q.pct_change(4, fill_method=None).reindex(qw.index)
             margin = qw["ebit"] / qw["revenue"]
-            mid = qw.index - pd.Timedelta(days=45)  # centre each bar inside its quarter
-            day = 24 * 3600 * 1000
             qlabel = [f"Qtr ended {d:%b %d, %Y}" for d in qw.index]
-            fig.add_bar(x=mid, y=qw["revenue"] / 1e9, name="Revenue", marker_color=AQUA,
-                        width=38 * day, offset=-40 * day, row=2, col=1,
+            fig.add_scatter(x=qw.index, y=qw["revenue"] / 1e9, name="Revenue", mode="lines+markers",
+                        line=dict(color=AQUA, width=2), marker=dict(size=8), row=2, col=1,
                         customdata=np.c_[qlabel, yoy["revenue"] * 100],
                         hovertemplate=f"%{{customdata[0]}}<br>Revenue {cur}%{{y:,.2f}}B"
                                       "<br>YoY %{customdata[1]:+.1f}%<extra></extra>")
-            fig.add_bar(x=mid, y=qw["ebit"] / 1e9, name="EBIT", marker_color=ORANGE,
-                        width=38 * day, offset=2 * day, row=2, col=1,
+            fig.add_scatter(x=qw.index, y=qw["ebit"] / 1e9, name="EBIT", mode="lines+markers",
+                        line=dict(color=ORANGE, width=2), marker=dict(size=8), row=2, col=1,
                         customdata=np.c_[qlabel, yoy["ebit"] * 100, margin * 100],
                         hovertemplate=f"%{{customdata[0]}}<br>EBIT {cur}%{{y:,.2f}}B"
                                       "<br>YoY %{customdata[1]:+.1f}%<br>Margin %{customdata[2]:.1f}%<extra></extra>")
             fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=2, col=1)
-            fig.update_xaxes(range=[s.index.min() - pd.Timedelta(days=50 if tf not in ("1M", "3M") else 3),
-                                    s.index.max() + pd.Timedelta(days=5)])
-        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%", bargap=0)
+            fig.update_xaxes(range=[s.index.min() - pd.Timedelta(days=5), s.index.max() + pd.Timedelta(days=5)])
+        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%")
         chart(fig, 600 if panels else 420)
         if show_q:
             if not len(q):
@@ -204,10 +201,10 @@ with tabs[0]:
                 st.caption("No quarter ended inside this timeframe. Pick 6M or longer to see quarterly results.")
             else:
                 earliest = q.index.min()
-                note = (f" Yahoo only provides quarterly results back to {earliest:%b %Y}, so earlier "
-                        f"quarters are blank." if earliest > start + pd.DateOffset(months=3) else "")
-                st.caption("Bars sit inside the quarter they cover; hover for year-over-year growth and EBIT "
-                           "margin." + note)
+                note = (f" Yahoo only provides quarterly results back to {earliest:%b %Y}, so the lines "
+                        f"start there." if earliest > start + pd.DateOffset(months=3) else "")
+                st.caption("Each point is a quarter's result, plotted at the quarter's end date; hover for "
+                           "year-over-year growth and EBIT margin." + note)
     else:
         st.write("No price history available.")
 
@@ -236,7 +233,7 @@ with tabs[1]:
         st.write("No financial statements available.")
     else:
         st.caption("Each panel shares the time axis with the share price above it, so you can see "
-                   "whether the stock followed the fundamentals. Orange bars are analyst estimates "
+                   "whether the stock followed the fundamentals. Dashed lines are analyst estimates "
                    "(EBITDA estimates = revenue consensus × latest EBITDA margin).")
         fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.03,
                             row_heights=[0.28, 0.18, 0.18, 0.18, 0.18],
@@ -245,20 +242,26 @@ with tabs[1]:
         p = co.prices[co.prices.index >= lo]
         fig.add_scatter(x=p.index, y=p, row=1, col=1, line=dict(color=BLUE, width=2), name="Price",
                         hovertemplate=f"{cur}%{{y:,.2f}}")
-        width = 1000 * 3600 * 24 * (250 if freq == "Annual" else 70)
         for i, m in enumerate(FUNDAMENTALS, start=2):
             scale = 1 if m == "eps" else 1e9
             unit = cur if m == "eps" else f"{cur}B "
-            fig.add_bar(x=f.index, y=f[m] / scale, row=i, col=1, marker_color=BLUE, width=width,
-                        name="Reported", showlegend=(i == 2), legendgroup="rep",
-                        hovertemplate=f"{LABELS[m]}: {unit}%{{y:,.2f}}")
-            ex = [(d, v[m]) for d, v in est_rows.items() if v.get(m) is not None]
-            if ex:
-                fig.add_bar(x=[d for d, _ in ex], y=[v / scale for _, v in ex], row=i, col=1,
-                            marker_color=ORANGE, width=width, name="Consensus estimate",
-                            showlegend=(i == 2), legendgroup="est",
-                            hovertemplate=f"{LABELS[m]} est: {unit}%{{y:,.2f}}")
-        fig.update_layout(bargap=0.15)
+            rep_s = f[m].dropna() / scale
+            fig.add_scatter(x=rep_s.index, y=rep_s, row=i, col=1, mode="lines+markers",
+                            line=dict(color=AQUA, width=2), marker=dict(size=8),
+                            name="Reported", showlegend=(i == 2), legendgroup="rep",
+                            hovertemplate=f"{LABELS[m]}: {unit}%{{y:,.2f}}")
+            ex = [(d, v[m] / scale) for d, v in est_rows.items() if v.get(m) is not None]
+            if ex and len(rep_s):
+                # Dashed line continues from the last reported year into the estimates.
+                xs = [rep_s.index[-1]] + [d for d, _ in ex]
+                ys = [rep_s.iloc[-1]] + [v for _, v in ex]
+                fig.add_scatter(x=xs, y=ys, row=i, col=1, mode="lines+markers",
+                                line=dict(color=AQUA, width=2, dash="dash"),
+                                marker=dict(size=8, symbol="circle-open", line=dict(width=2)),
+                                name="Consensus estimate", showlegend=(i == 2), legendgroup="est",
+                                hovertemplate=f"{LABELS[m]} est: {unit}%{{y:,.2f}}")
+            if (rep_s < 0).any() or any(v < 0 for _, v in ex):
+                fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=i, col=1)
         chart(fig, 900)
 
         st.subheader("Indexed growth (start = 100)")
