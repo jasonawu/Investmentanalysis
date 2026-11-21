@@ -157,14 +157,57 @@ with tabs[0]:
                  "Max": px.index.min()}[tf]
         s = px[px.index >= start]
         chg = s.iloc[-1] / s.iloc[0] - 1
-        fig = go.Figure(go.Scatter(x=s.index, y=s, mode="lines", line=dict(color=BLUE, width=2),
-                                   name="Close", hovertemplate=f"{cur}%{{y:,.2f}}<extra></extra>"))
+        show_q = st.checkbox("Show quarterly revenue & EBIT", value=True,
+                             help="Reported results per quarter, lined up under the price on the same dates.")
+        q = co.quarterly.sort_index() if len(co.quarterly) else co.quarterly
+        qw = q[(q.index >= start) & (q.index <= end + pd.Timedelta(days=1))].dropna(subset=["revenue"]) \
+            if (show_q and len(q)) else q.iloc[0:0]
+        panels = show_q and len(qw) > 0
+
+        fig = make_subplots(rows=2 if panels else 1, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+                            row_heights=[0.6, 0.4] if panels else [1.0],
+                            subplot_titles=[f"Share price ({co.currency})", "Quarterly revenue & EBIT (billions)"]
+                            if panels else None)
+        fig.add_scatter(x=s.index, y=s, mode="lines", line=dict(color=BLUE, width=2), name="Close",
+                        hovertemplate=f"{cur}%{{y:,.2f}}", row=1, col=1)
         if len(s) > 50:
             ma = px.rolling(50).mean().reindex(s.index)
             fig.add_scatter(x=ma.index, y=ma, mode="lines", name="50-day avg",
-                            line=dict(color=GRAY, width=1.5, dash="dot"))
-        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%", yaxis_title=co.currency)
-        chart(fig, 420)
+                            line=dict(color=GRAY, width=1.5, dash="dot"), hovertemplate=f"{cur}%{{y:,.2f}}",
+                            row=1, col=1)
+        if panels:
+            # Year-over-year growth needs the quarter 4 periods earlier, which may sit outside the window.
+            yoy = q.pct_change(4, fill_method=None).reindex(qw.index)
+            margin = qw["ebit"] / qw["revenue"]
+            mid = qw.index - pd.Timedelta(days=45)  # centre each bar inside its quarter
+            day = 24 * 3600 * 1000
+            qlabel = [f"Qtr ended {d:%b %d, %Y}" for d in qw.index]
+            fig.add_bar(x=mid, y=qw["revenue"] / 1e9, name="Revenue", marker_color=AQUA,
+                        width=38 * day, offset=-40 * day, row=2, col=1,
+                        customdata=np.c_[qlabel, yoy["revenue"] * 100],
+                        hovertemplate=f"%{{customdata[0]}}<br>Revenue {cur}%{{y:,.2f}}B"
+                                      "<br>YoY %{customdata[1]:+.1f}%<extra></extra>")
+            fig.add_bar(x=mid, y=qw["ebit"] / 1e9, name="EBIT", marker_color=ORANGE,
+                        width=38 * day, offset=2 * day, row=2, col=1,
+                        customdata=np.c_[qlabel, yoy["ebit"] * 100, margin * 100],
+                        hovertemplate=f"%{{customdata[0]}}<br>EBIT {cur}%{{y:,.2f}}B"
+                                      "<br>YoY %{customdata[1]:+.1f}%<br>Margin %{customdata[2]:.1f}%<extra></extra>")
+            fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=2, col=1)
+            fig.update_xaxes(range=[s.index.min() - pd.Timedelta(days=50 if tf not in ("1M", "3M") else 3),
+                                    s.index.max() + pd.Timedelta(days=5)])
+        fig.update_layout(title=f"{co.ticker} share price · {tf} {chg*100:+.1f}%", bargap=0)
+        chart(fig, 600 if panels else 420)
+        if show_q:
+            if not len(q):
+                st.caption("No quarterly results available for this company.")
+            elif not panels:
+                st.caption("No quarter ended inside this timeframe. Pick 6M or longer to see quarterly results.")
+            else:
+                earliest = q.index.min()
+                note = (f" Yahoo only provides quarterly results back to {earliest:%b %Y}, so earlier "
+                        f"quarters are blank." if earliest > start + pd.DateOffset(months=3) else "")
+                st.caption("Bars sit inside the quarter they cover; hover for year-over-year growth and EBIT "
+                           "margin." + note)
     else:
         st.write("No price history available.")
 

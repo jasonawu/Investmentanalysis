@@ -41,7 +41,7 @@ A black window opens. The first time, it spends a few minutes installing things.
 | Section | What it shows | Why it matters for the thesis |
 |---|---|---|
 | **Headline** | Price, forward fundamental, current and fair multiple on the chosen lens, fair value, upside, and an undervalued/fair/overvalued call (±10% band) | The answer in one line |
-| **① Price** | Price chart with 1M → Max timeframes and a 50-day average | Context |
+| **① Price** | Price chart with 1M → Max timeframes and a 50-day average, with quarterly revenue and EBIT bars on the same timeline (hover for YoY growth and margin) | Price and results in one place |
 | **② Fundamentals vs price** | Revenue, EBITDA, EBIT, EPS bars lined up under the price chart (annual or quarterly TTM, with estimates in orange); price vs EPS vs revenue indexed to 100; YoY growth table | Did the stock follow the fundamentals? |
 | **③ Valuation summary** | Football-field chart of fair value on P/E, EV/EBITDA and P/S (range across methods, blended value, current price, 52-week range); a count of how many lenses agree | Do the lenses agree? |
 | **④ Multiple history** | Any of the three multiples over time with average and ±1σ band; the past N years' return split into fundamental growth and multiple change | Is today's multiple stretched or cheap against its own history? |
