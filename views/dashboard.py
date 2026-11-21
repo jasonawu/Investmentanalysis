@@ -238,37 +238,54 @@ with tabs[1]:
     if f.empty:
         st.write("No financial statements available.")
     else:
-        st.caption("Each panel shares the time axis with the share price above it, so you can see "
-                   "whether the stock followed the fundamentals. Dashed lines are analyst estimates "
+        st.caption("Price and the four results stacked on one shared date axis, each with its own scale. "
+                   "Hover anywhere to line up the price with the results; dashed lines are analyst estimates "
                    "(EBITDA estimates = revenue consensus × latest EBITDA margin).")
-        fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.03,
-                            row_heights=[0.28, 0.18, 0.18, 0.18, 0.18],
-                            subplot_titles=["Share price"] + [LABELS[m] for m in FUNDAMENTALS])
+        # One shared x axis (so the hover guide line and tooltip span every panel) and five stacked y axes.
+        heights, gap = [0.28, 0.18, 0.18, 0.18, 0.18], 0.022
+        usable = 1 - gap * (len(heights) - 1)
+        domains, top = [], 1.0
+        for h_ in heights:
+            bottom = max(0.0, top - h_ * usable)
+            domains.append([round(bottom, 4), round(top, 4)])
+            top = bottom - gap
+        fig = go.Figure()
         lo = f.index.min() - pd.DateOffset(months=12)
         p = co.prices[co.prices.index >= lo]
-        fig.add_scatter(x=p.index, y=p, row=1, col=1, line=dict(color=BLUE, width=2), name="Price",
+        fig.add_scatter(x=p.index, y=p, line=dict(color=BLUE, width=2), name="Price",
                         hovertemplate=f"{cur}%{{y:,.2f}}")
+        axes = {"yaxis": dict(title=f"Price ({co.currency})", domain=domains[0])}
         for i, m in enumerate(FUNDAMENTALS, start=2):
+            ya = f"y{i}"
             scale = 1 if m == "eps" else 1e9
-            unit = cur if m == "eps" else f"{cur}B "
+            fmt = f"{cur}%{{y:,.2f}}" + ("" if m == "eps" else "B")
+            short = {"revenue": "Revenue", "ebitda": "EBITDA", "ebit": "EBIT", "eps": "EPS"}[m]
+            axes[f"yaxis{i}"] = dict(title=f"{short} ({cur.strip()}{'' if m == 'eps' else 'B'})", domain=domains[i - 1])
             rep_s = f[m].dropna() / scale
-            fig.add_scatter(x=rep_s.index, y=rep_s, row=i, col=1, mode="lines+markers",
-                            line=dict(color=AQUA, width=2), marker=dict(size=8),
-                            name="Reported", showlegend=(i == 2), legendgroup="rep",
-                            hovertemplate=f"{LABELS[m]}: {unit}%{{y:,.2f}}")
+            fig.add_scatter(x=rep_s.index, y=rep_s, yaxis=ya, mode="lines+markers",
+                            line=dict(color=AQUA, width=2), marker=dict(size=8), name=short, showlegend=False,
+                            hovertemplate=fmt)
             ex = [(d, v[m] / scale) for d, v in est_rows.items() if v.get(m) is not None]
             if ex and len(rep_s):
                 # Dashed line continues from the last reported year into the estimates.
                 xs = [rep_s.index[-1]] + [d for d, _ in ex]
                 ys = [rep_s.iloc[-1]] + [v for _, v in ex]
-                fig.add_scatter(x=xs, y=ys, row=i, col=1, mode="lines+markers",
+                fig.add_scatter(x=xs, y=ys, yaxis=ya, mode="lines+markers",
                                 line=dict(color=AQUA, width=2, dash="dash"),
                                 marker=dict(size=8, symbol="circle-open", line=dict(width=2)),
-                                name="Consensus estimate", showlegend=(i == 2), legendgroup="est",
-                                hovertemplate=f"{LABELS[m]} est: {unit}%{{y:,.2f}}")
+                                name=f"{short} est.", showlegend=False, hovertemplate=fmt)
             if (rep_s < 0).any() or any(v < 0 for _, v in ex):
-                fig.add_hline(y=0, line=dict(color=GRAY, width=1), row=i, col=1)
-        chart(fig, 900)
+                fig.add_hline(y=0, line=dict(color=GRAY, width=1), yref=ya)
+        # Legend-only entries explaining the two line styles.
+        fig.add_scatter(x=[None], y=[None], mode="lines+markers", line=dict(color=AQUA, width=2),
+                        marker=dict(size=8), name="Reported")
+        if est_rows:
+            fig.add_scatter(x=[None], y=[None], mode="lines+markers", line=dict(color=AQUA, width=2, dash="dash"),
+                            marker=dict(size=8, symbol="circle-open", line=dict(width=2)), name="Consensus estimate")
+        fig.update_layout(**axes, xaxis=dict(anchor=f"y{len(heights)}"), hoversubplots="axis")
+        fig.update_xaxes(showspikes=True, spikemode="across", spikesnap="cursor", spikethickness=1,
+                         spikedash="dot", spikecolor=GRAY)
+        chart(fig, 860)
 
         st.subheader("Indexed growth (start = 100)")
         st.caption("Price vs. EPS and revenue on one scale. When price outruns EPS the multiple expanded; "
